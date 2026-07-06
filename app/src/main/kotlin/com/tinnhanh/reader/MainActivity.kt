@@ -1,24 +1,55 @@
 package com.tinnhanh.reader
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.Parcelable
+import android.provider.MediaStore
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.tinnhanh.core.Discovery
 import com.tinnhanh.core.DohDns
 import com.tinnhanh.core.SignatureVerifier
 import okhttp3.OkHttpClient
+import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private val bg = Executors.newSingleThreadExecutor()
 
+    // Cho <input type=file>
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraImageUri: Uri? = null
+
+    // Cho getUserMedia (camera/mic trong trang)
+    private var pendingWebPermission: PermissionRequest? = null
+
+    // Cho GPS
+    private var pendingGeoOrigin: String? = null
+    private var pendingGeoCallback: GeolocationPermissions.Callback? = null
+
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+    private lateinit var cameraPermLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var geoPermLauncher: ActivityResultLauncher<Array<String>>
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        registerLaunchers()
+
         webView = WebView(this)
         setContentView(webView)
 
@@ -27,16 +58,138 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
+            allowFileAccess = true
+            allowContentAccess = true
             loadWithOverviewMode = true
             useWideViewPort = true
+            javaScriptCanOpenWindowsAutomatically = true
+            setGeolocationEnabled(true)
         }
         webView.webViewClient = WebViewClient()
-        webView.webChromeClient = WebChromeClient()
+        webView.webChromeClient = AppChromeClient()
 
-        // Discovery chạy nền, xong thì load domain sống vào WebView (main thread).
         bg.execute {
             val target = runDiscovery()
             runOnUiThread { webView.loadUrl(target) }
+        }
+    }
+
+    private fun registerLaunchers() {
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val cb = filePathCallback
+            filePathCallback = null
+            if (cb == null) return@registerForActivityResult
+            val uris: Array<Uri>? = when {
+                result.resultCode != RESULT_OK -> null
+                result.data?.data != null -> arrayOf(result.data!!.data!!)
+                cameraImageUri != null -> arrayOf(cameraImageUri!!)
+                else -> null
+            }
+            cb.onReceiveValue(uris)
+        }
+
+        cameraPermLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { grants ->
+            val req = pendingWebPermission
+            pendingWebPermission = null
+            if (req == null) return@registerForActivityResult
+            if (grants.values.all { it }) req.grant(req.resources) else req.deny()
+        }
+
+        geoPermLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { grants ->
+            val cb = pendingGeoCallback
+            val origin = pendingGeoOrigin
+            pendingGeoCallback = null
+            pendingGeoOrigin = null
+            if (cb != null && origin != null) cb.invoke(origin, grants.values.any { it }, false)
+        }
+    }
+
+    private fun hasPermission(p: String) =
+        ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private inner class AppChromeClient : WebChromeClient() {
+        // Camera/mic trực tiếp trong trang (getUserMedia)
+        override fun onPermissionRequest(request: PermissionRequest) {
+            runOnUiThread {
+                val wantsCamera = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                if (wantsCamera && !hasPermission(Manifest.permission.CAMERA)) {
+                    pendingWebPermission = request
+                    cameraPermLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                } else {
+                    request.grant(request.resources)
+                }
+            }
+        }
+
+        // GPS — xin quyền vị trí khi trang cần
+        override fun onGeolocationPermissionsShowPrompt(
+            origin: String,
+            callback: GeolocationPermissions.Callback,
+        ) {
+            if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                callback.invoke(origin, true, false)
+                return
+            }
+            pendingGeoOrigin = origin
+            pendingGeoCallback = callback
+            geoPermLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                )
+            )
+        }
+
+        // <input type="file"> kể cả capture=camera
+        override fun onShowFileChooser(
+            webView: WebView?,
+            callback: ValueCallback<Array<Uri>>?,
+            params: FileChooserParams?,
+        ): Boolean {
+            filePathCallback?.onReceiveValue(null)
+            filePathCallback = callback
+
+            val contentIntent = params?.createIntent()
+                ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+            val cameraIntent = buildCameraIntent()
+            val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+                putExtra(Intent.EXTRA_INTENT, contentIntent)
+                putExtra(Intent.EXTRA_TITLE, "Chọn hoặc chụp ảnh")
+                if (cameraIntent != null) {
+                    putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf<Parcelable>(cameraIntent))
+                }
+            }
+            return try {
+                fileChooserLauncher.launch(chooser)
+                true
+            } catch (e: Exception) {
+                filePathCallback = null
+                false
+            }
+        }
+    }
+
+    private fun buildCameraIntent(): Intent? {
+        if (!hasPermission(Manifest.permission.CAMERA)) return null
+        return try {
+            val imageFile = File.createTempFile("capture_", ".jpg", cacheDir)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imageFile)
+            cameraImageUri = uri
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
