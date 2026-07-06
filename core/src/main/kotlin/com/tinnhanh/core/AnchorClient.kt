@@ -15,7 +15,11 @@ fun extractSignedConfigFromHtml(html: String): String? {
     return SIGNED_RE.find(unescaped)?.value
 }
 
-/** Lấy nội dung config đã ký từ một anchor. Với URL Telegram (chứa "t.me/") thì trích từ HTML. */
+/**
+ * Lấy nội dung config đã ký từ một anchor.
+ * Nhận diện theo NỘI DUNG (không theo URL): body là JSON (bắt đầu '{') → trả thẳng;
+ * là HTML (vd trang Telegram) → trích khối {"payload":..,"sig":..}.
+ */
 class AnchorClient(private val client: OkHttpClient) {
     fun fetch(anchorUrl: String): String? {
         return try {
@@ -23,7 +27,8 @@ class AnchorClient(private val client: OkHttpClient) {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val body = resp.body?.string() ?: return null
-                if (anchorUrl.contains("t.me/")) extractSignedConfigFromHtml(body) else body.trim()
+                val trimmed = body.trim()
+                if (trimmed.startsWith("{")) trimmed else extractSignedConfigFromHtml(body)
             }
         } catch (e: Exception) {
             null
