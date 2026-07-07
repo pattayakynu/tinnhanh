@@ -105,6 +105,11 @@ class MainActivity : AppCompatActivity() {
             null
         }
 
+        // Kiểm tra bản mới (nếu có config).
+        result?.config?.let { cfg ->
+            runOnUiThread { Updater.check(this, cfg, OkHttpClient()) }
+        }
+
         // FORCE_PROXY_TEST: ép bỏ qua Lớp 1 để test tunnel trên máy thật.
         val live = if (Config.FORCE_PROXY_TEST) null else result?.liveDomain
         if (live != null) {

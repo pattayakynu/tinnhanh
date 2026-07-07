@@ -7,6 +7,7 @@ data class AppConfig(
     val cdn: String,
     val outline: List<String>,
     val minVersion: Int,
+    val latestVersion: Int = 0,
     val latestApk: String,
     val push: String,
     val issuedAt: String,
