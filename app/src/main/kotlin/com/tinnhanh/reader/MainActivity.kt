@@ -85,10 +85,6 @@ class MainActivity : AppCompatActivity() {
             setGeolocationEnabled(true)
             // Cho phép trang https load tài nguyên http (player/segment phim đời cũ)
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            // Bỏ dấu "wv"/"Version/x.x" để UA giống Chrome thật (tránh bị chặn theo UA)
-            userAgentString = userAgentString
-                .replace("; wv", "")
-                .replace(Regex("Version/\\d+\\.\\d+ "), "")
         }
         // Cho phép cookie bên thứ ba (auth video ở subdomain phim khác origin)
         CookieManager.getInstance().setAcceptCookie(true)
@@ -183,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         ) {
             val url = request.url.toString()
             if (request.isForMainFrame || isMediaUrl(url)) {
-                toastDiag("NET ${error.errorCode} ${error.description}: ${tailUrl(url)}")
+                toastDiag("NET ${error.errorCode} HOST=${request.url.host}${request.url.path?.take(24) ?: ""} (${error.description})")
             }
         }
 
