@@ -105,7 +105,8 @@ class MainActivity : AppCompatActivity() {
             null
         }
 
-        val live = result?.liveDomain
+        // FORCE_PROXY_TEST: ép bỏ qua Lớp 1 để test tunnel trên máy thật.
+        val live = if (Config.FORCE_PROXY_TEST) null else result?.liveDomain
         if (live != null) {
             runOnUiThread { webView.loadUrl(live) }
             return
