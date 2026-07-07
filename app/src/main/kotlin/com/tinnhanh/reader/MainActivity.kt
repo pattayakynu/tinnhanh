@@ -10,10 +10,12 @@ import android.os.Bundle
 import android.os.Parcelable
 import android.provider.MediaStore
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
@@ -76,7 +78,17 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             javaScriptCanOpenWindowsAutomatically = true
             setGeolocationEnabled(true)
+            // Cho phép trang https load tài nguyên http (player/segment phim đời cũ)
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            // Bỏ dấu "wv"/"Version/x.x" để UA giống Chrome thật (tránh bị chặn theo UA)
+            userAgentString = userAgentString
+                .replace("; wv", "")
+                .replace(Regex("Version/\\d+\\.\\d+ "), "")
         }
+        // Cho phép cookie bên thứ ba (auth video ở subdomain phim khác origin)
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
         webView.webViewClient = WebViewClient()
         chromeClient = AppChromeClient()
         webView.webChromeClient = chromeClient
