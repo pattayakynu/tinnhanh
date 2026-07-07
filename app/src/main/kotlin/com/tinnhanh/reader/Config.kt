@@ -12,6 +12,6 @@ object Config {
     // domain load tạm khi discovery chưa xong / thất bại (gương ưu tiên nhất)
     const val FALLBACK_DOMAIN = "https://anchoi2.xxx"
 
-    // TẠM: ép luôn đi qua proxy (Lớp 2) để test trên máy thật. Gỡ về false sau khi test.
-    const val FORCE_PROXY_TEST = true
+    // Cờ debug: ép luôn đi qua proxy (Lớp 2). Bình thường để false (Lớp 1 trước, proxy chỉ khi cần).
+    const val FORCE_PROXY_TEST = false
 }
