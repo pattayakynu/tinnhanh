@@ -10,15 +10,20 @@ import android.os.Bundle
 import android.os.Parcelable
 import android.provider.MediaStore
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -89,7 +94,8 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        webView.webViewClient = WebViewClient()
+        WebView.setWebContentsDebuggingEnabled(true)
+        webView.webViewClient = AppWebViewClient()
         chromeClient = AppChromeClient()
         webView.webChromeClient = chromeClient
 
@@ -150,7 +156,57 @@ class MainActivity : AppCompatActivity() {
             .show(WindowInsetsCompat.Type.systemBars())
     }
 
+    // ===== Công cụ soi lỗi (tạm, để chẩn phim không load) =====
+    private var lastToastAt = 0L
+
+    private fun isMediaUrl(url: String): Boolean {
+        val u = url.lowercase()
+        return u.contains("phim") || u.contains(".m3u8") || u.contains(".ts") ||
+            u.contains(".mp4") || u.contains("/video") || u.contains("stream")
+    }
+
+    private fun tailUrl(url: String): String =
+        if (url.length > 90) "…" + url.takeLast(90) else url
+
+    private fun toastDiag(text: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastToastAt < 2500) return
+        lastToastAt = now
+        runOnUiThread { Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show() }
+    }
+
+    private inner class AppWebViewClient : WebViewClient() {
+        override fun onReceivedError(
+            view: WebView,
+            request: WebResourceRequest,
+            error: WebResourceError,
+        ) {
+            val url = request.url.toString()
+            if (request.isForMainFrame || isMediaUrl(url)) {
+                toastDiag("NET ${error.errorCode} ${error.description}: ${tailUrl(url)}")
+            }
+        }
+
+        override fun onReceivedHttpError(
+            view: WebView,
+            request: WebResourceRequest,
+            errorResponse: WebResourceResponse,
+        ) {
+            val url = request.url.toString()
+            if (isMediaUrl(url)) {
+                toastDiag("HTTP ${errorResponse.statusCode}: ${tailUrl(url)}")
+            }
+        }
+    }
+
     private inner class AppChromeClient : WebChromeClient() {
+        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+            if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                toastDiag("JS: ${message.message().take(140)}")
+            }
+            return true
+        }
+
         // Camera/mic trực tiếp trong trang (getUserMedia)
         override fun onPermissionRequest(request: PermissionRequest) {
             runOnUiThread {
