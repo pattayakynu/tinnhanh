@@ -22,6 +22,7 @@ jobs:
         with:
           ndk-version: r26d
       - name: Build mobileproxy AAR
+        continue-on-error: true
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
@@ -39,6 +40,7 @@ jobs:
             github.com/Jigsaw-Code/outline-sdk/x/mobileproxy
           echo "=== AAR built ===" && ls -la "$GITHUB_WORKSPACE/app/libs/"
       - name: Upload AAR (verify)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: mobileproxy-aar

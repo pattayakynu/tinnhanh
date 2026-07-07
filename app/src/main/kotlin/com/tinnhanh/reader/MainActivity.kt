@@ -3,22 +3,28 @@ package com.tinnhanh.reader
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcelable
 import android.provider.MediaStore
+import android.view.View
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.tinnhanh.core.Discovery
 import com.tinnhanh.core.DohDns
 import com.tinnhanh.core.SignatureVerifier
@@ -28,6 +34,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
+    private var chromeClient: AppChromeClient? = null
     private val bg = Executors.newSingleThreadExecutor()
 
     // Cho <input type=file>
@@ -40,6 +47,11 @@ class MainActivity : AppCompatActivity() {
     // Cho GPS
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
+
+    // Cho video fullscreen
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var savedOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
     private lateinit var cameraPermLauncher: ActivityResultLauncher<Array<String>>
@@ -66,7 +78,8 @@ class MainActivity : AppCompatActivity() {
             setGeolocationEnabled(true)
         }
         webView.webViewClient = WebViewClient()
-        webView.webChromeClient = AppChromeClient()
+        chromeClient = AppChromeClient()
+        webView.webChromeClient = chromeClient
 
         bg.execute {
             val target = runDiscovery()
@@ -113,6 +126,18 @@ class MainActivity : AppCompatActivity() {
     private fun hasPermission(p: String) =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
+    private fun hideSystemBars() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    private fun showSystemBars() {
+        WindowCompat.getInsetsController(window, window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
+    }
+
     private inner class AppChromeClient : WebChromeClient() {
         // Camera/mic trực tiếp trong trang (getUserMedia)
         override fun onPermissionRequest(request: PermissionRequest) {
@@ -144,6 +169,38 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                 )
             )
+        }
+
+        // Video fullscreen (phim sex phát toàn màn hình)
+        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            if (customView != null) {
+                callback.onCustomViewHidden()
+                return
+            }
+            customView = view
+            customViewCallback = callback
+            savedOrientation = requestedOrientation
+            (window.decorView as FrameLayout).addView(
+                view,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                )
+            )
+            webView.visibility = View.GONE
+            hideSystemBars()
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+
+        override fun onHideCustomView() {
+            val view = customView ?: return
+            (window.decorView as FrameLayout).removeView(view)
+            customView = null
+            customViewCallback?.onCustomViewHidden()
+            customViewCallback = null
+            webView.visibility = View.VISIBLE
+            showSystemBars()
+            requestedOrientation = savedOrientation
         }
 
         // <input type="file"> kể cả capture=camera
@@ -210,6 +267,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        when {
+            customView != null -> chromeClient?.onHideCustomView()
+            webView.canGoBack() -> webView.goBack()
+            else -> super.onBackPressed()
+        }
     }
 }
