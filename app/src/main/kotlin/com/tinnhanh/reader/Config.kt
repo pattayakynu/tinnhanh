@@ -10,5 +10,5 @@ object Config {
     )
 
     // domain load tạm khi discovery chưa xong / thất bại (gương ưu tiên nhất)
-    const val FALLBACK_DOMAIN = "https://anchoi1.xxx"
+    const val FALLBACK_DOMAIN = "https://anchoi2.xxx"
 }

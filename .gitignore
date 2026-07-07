@@ -1,6 +1,7 @@
 .gradle/
 build/
 */build/
+app/libs/*.aar
 local.properties
 .idea/
 captures/

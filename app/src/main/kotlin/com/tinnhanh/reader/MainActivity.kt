@@ -10,20 +10,15 @@ import android.os.Bundle
 import android.os.Parcelable
 import android.provider.MediaStore
 import android.view.View
-import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -44,18 +39,18 @@ class MainActivity : AppCompatActivity() {
     private var chromeClient: AppChromeClient? = null
     private val bg = Executors.newSingleThreadExecutor()
 
-    // Cho <input type=file>
+    // <input type=file>
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
 
-    // Cho getUserMedia (camera/mic trong trang)
+    // getUserMedia (camera/mic trong trang)
     private var pendingWebPermission: PermissionRequest? = null
 
-    // Cho GPS
+    // GPS
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
 
-    // Cho video fullscreen
+    // Video fullscreen
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var savedOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -83,22 +78,53 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             javaScriptCanOpenWindowsAutomatically = true
             setGeolocationEnabled(true)
-            // Cho phép trang https load tài nguyên http (player/segment phim đời cũ)
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
-        // Cho phép cookie bên thứ ba (auth video ở subdomain phim khác origin)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        WebView.setWebContentsDebuggingEnabled(true)
-        webView.webViewClient = AppWebViewClient()
+        webView.webViewClient = WebViewClient()
         chromeClient = AppChromeClient()
         webView.webChromeClient = chromeClient
 
-        bg.execute {
-            val target = runDiscovery()
-            runOnUiThread { webView.loadUrl(target) }
+        bg.execute { resolveAndLoad() }
+    }
+
+    /** Lớp 1: tìm gương sống → load thẳng. Lớp 2: không có gương → bật proxy rồi load. */
+    private fun resolveAndLoad() {
+        val bootstrap = OkHttpClient()
+        val dohClient = OkHttpClient.Builder().dns(DohDns(bootstrap)).build()
+        val result = try {
+            Discovery(
+                anchorClientHttp = dohClient,
+                probeHttp = OkHttpClient(),
+                verifier = SignatureVerifier(Config.PUBLIC_KEY_B64),
+                anchors = Config.ANCHORS,
+            ).discover()
+        } catch (e: Exception) {
+            null
         }
+
+        val live = result?.liveDomain
+        if (live != null) {
+            runOnUiThread { webView.loadUrl(live) }
+            return
+        }
+
+        // Lớp 2: không gương nào vào thẳng được → thử tunnel qua proxy.
+        val ssKey = result?.config?.outline?.firstOrNull()
+        val firstDomain = result?.config?.domains?.firstOrNull() ?: Config.FALLBACK_DOMAIN
+        if (ssKey != null && ssKey.startsWith("ss://")) {
+            val addr = ProxyManager.start(ssKey)
+            if (addr != null) {
+                val applied = ProxyManager.applyToWebView(addr, { it.run() }) {
+                    runOnUiThread { webView.loadUrl(firstDomain) }
+                }
+                if (applied) return
+            }
+        }
+
+        runOnUiThread { webView.loadUrl(firstDomain) }
     }
 
     private fun registerLaunchers() {
@@ -152,58 +178,22 @@ class MainActivity : AppCompatActivity() {
             .show(WindowInsetsCompat.Type.systemBars())
     }
 
-    // ===== Công cụ soi lỗi (tạm, để chẩn phim không load) =====
-    private var lastToastAt = 0L
-
-    private fun isMediaUrl(url: String): Boolean {
-        val u = url.lowercase()
-        return u.contains("phim") || u.contains(".m3u8") || u.contains(".ts") ||
-            u.contains(".mp4") || u.contains("/video") || u.contains("stream")
-    }
-
-    private fun tailUrl(url: String): String =
-        if (url.length > 90) "…" + url.takeLast(90) else url
-
-    private fun toastDiag(text: String) {
-        val now = System.currentTimeMillis()
-        if (now - lastToastAt < 2500) return
-        lastToastAt = now
-        runOnUiThread { Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show() }
-    }
-
-    private inner class AppWebViewClient : WebViewClient() {
-        override fun onReceivedError(
-            view: WebView,
-            request: WebResourceRequest,
-            error: WebResourceError,
-        ) {
-            val url = request.url.toString()
-            if (request.isForMainFrame || isMediaUrl(url)) {
-                toastDiag("NET ${error.errorCode} ${request.url.host}${request.url.path ?: ""}")
+    private fun buildCameraIntent(): Intent? {
+        if (!hasPermission(Manifest.permission.CAMERA)) return null
+        return try {
+            val imageFile = File.createTempFile("capture_", ".jpg", cacheDir)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imageFile)
+            cameraImageUri = uri
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
-        }
-
-        override fun onReceivedHttpError(
-            view: WebView,
-            request: WebResourceRequest,
-            errorResponse: WebResourceResponse,
-        ) {
-            val url = request.url.toString()
-            if (isMediaUrl(url)) {
-                toastDiag("HTTP ${errorResponse.statusCode}: ${tailUrl(url)}")
-            }
+        } catch (e: Exception) {
+            null
         }
     }
 
     private inner class AppChromeClient : WebChromeClient() {
-        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-            if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                toastDiag("JS: ${message.message().take(140)}")
-            }
-            return true
-        }
-
-        // Camera/mic trực tiếp trong trang (getUserMedia)
         override fun onPermissionRequest(request: PermissionRequest) {
             runOnUiThread {
                 val wantsCamera = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
@@ -216,7 +206,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // GPS — xin quyền vị trí khi trang cần
         override fun onGeolocationPermissionsShowPrompt(
             origin: String,
             callback: GeolocationPermissions.Callback,
@@ -235,7 +224,6 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        // Video fullscreen (phim sex phát toàn màn hình)
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
             if (customView != null) {
                 callback.onCustomViewHidden()
@@ -267,7 +255,6 @@ class MainActivity : AppCompatActivity() {
             requestedOrientation = savedOrientation
         }
 
-        // <input type="file"> kể cả capture=camera
         override fun onShowFileChooser(
             webView: WebView?,
             callback: ValueCallback<Array<Uri>>?,
@@ -296,37 +283,6 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback = null
                 false
             }
-        }
-    }
-
-    private fun buildCameraIntent(): Intent? {
-        if (!hasPermission(Manifest.permission.CAMERA)) return null
-        return try {
-            val imageFile = File.createTempFile("capture_", ".jpg", cacheDir)
-            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imageFile)
-            cameraImageUri = uri
-            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                putExtra(MediaStore.EXTRA_OUTPUT, uri)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun runDiscovery(): String {
-        return try {
-            val bootstrap = OkHttpClient()
-            val dohClient = OkHttpClient.Builder().dns(DohDns(bootstrap)).build()
-            val discovery = Discovery(
-                anchorClientHttp = dohClient,
-                probeHttp = OkHttpClient(),
-                verifier = SignatureVerifier(Config.PUBLIC_KEY_B64),
-                anchors = Config.ANCHORS,
-            )
-            discovery.discover()?.liveDomain ?: Config.FALLBACK_DOMAIN
-        } catch (e: Exception) {
-            Config.FALLBACK_DOMAIN
         }
     }
 
