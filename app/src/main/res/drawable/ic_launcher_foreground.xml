@@ -1,19 +1,27 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- pavilion (đáy viên, tối) -->
-    <path android:pathData="M28,56 L80,56 L54,90 Z" android:fillColor="#A01222" />
-    <path android:pathData="M54,56 L80,56 L54,90 Z" android:fillColor="#880C1A" />
-    <!-- crown (thân trên, trung) -->
-    <path android:pathData="M54,30 L76,44 L80,56 L28,56 L32,44 Z" android:fillColor="#D6283C" />
-    <!-- girdle facets -->
-    <path android:pathData="M32,44 L28,56 L40,44 Z" android:fillColor="#C01C30" />
-    <path android:pathData="M76,44 L80,56 L68,44 Z" android:fillColor="#C01C30" />
-    <!-- crown facets -->
-    <path android:pathData="M54,30 L40,44 L32,44 Z" android:fillColor="#F0506A" />
-    <path android:pathData="M54,30 L68,44 L76,44 Z" android:fillColor="#F0506A" />
-    <!-- table (đỉnh sáng) -->
-    <path android:pathData="M54,30 L68,44 L54,52 L40,44 Z" android:fillColor="#FF9AA8" />
-    <!-- ánh lấp lánh -->
-    <path android:pathData="M54,52 L60,44 L54,44 Z" android:fillColor="#FFD6DC" />
+    <!-- quầng lửa phát sáng sau viên ngọc -->
+    <path android:pathData="M8,50 a46,46 0 1,0 92,0 a46,46 0 1,0 -92,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial"
+                android:centerX="54" android:centerY="50"
+                android:gradientRadius="46">
+                <item android:offset="0" android:color="#D9FF7A1E" />
+                <item android:offset="0.6" android:color="#59E8451A" />
+                <item android:offset="1" android:color="#00E8451A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- viên ngọc ruby -->
+    <path android:pathData="M26,58 L82,58 L54,88 Z" android:fillColor="#9E1020" />
+    <path android:pathData="M54,58 L82,58 L54,88 Z" android:fillColor="#7C0C18" />
+    <path android:pathData="M54,26 L78,44 L82,58 L26,58 L30,44 Z" android:fillColor="#D82438" />
+    <path android:pathData="M30,44 L26,58 L40,44 Z" android:fillColor="#B81828" />
+    <path android:pathData="M78,44 L82,58 L68,44 Z" android:fillColor="#B81828" />
+    <path android:pathData="M54,26 L40,44 L30,44 Z" android:fillColor="#F0506A" />
+    <path android:pathData="M54,26 L68,44 L78,44 Z" android:fillColor="#F0506A" />
+    <path android:pathData="M54,26 L68,44 L54,54 L40,44 Z" android:fillColor="#FF8E9C" />
+    <path android:pathData="M54,54 L61,44 L54,44 Z" android:fillColor="#FFE2E6" />
 </vector>
