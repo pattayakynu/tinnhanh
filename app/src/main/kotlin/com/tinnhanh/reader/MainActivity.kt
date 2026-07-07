@@ -179,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         ) {
             val url = request.url.toString()
             if (request.isForMainFrame || isMediaUrl(url)) {
-                toastDiag("NET ${error.errorCode} HOST=${request.url.host}${request.url.path?.take(24) ?: ""} (${error.description})")
+                toastDiag("NET ${error.errorCode} ${request.url.host}${request.url.path ?: ""}")
             }
         }
 
